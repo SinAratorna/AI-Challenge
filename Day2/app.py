@@ -4,7 +4,6 @@ import requests
 
 app = Flask(__name__)
 
-# URL компании a101, который выступает прокси
 BASE_URL = "https://ai-public.a101.ru/api"
 MODEL_NAME = "google/gemini-3.1-pro-preview"
 
@@ -237,12 +236,12 @@ HTML_TEMPLATE = """
             <input type="password" id="apiKey" placeholder="Вставьте ваш личный ключ a101...">
             
             <label>Суть Вопрошания (Запрос):</label>
-            <textarea id="basePrompt">Опиши устройство летательной машины Леонардо да Винчи. Расскажи об этом в двух абзацах на русском языке.</textarea>
+            <textarea id="basePrompt">Опиши устройство летательной машины Леонардо да Винчи. Расскажи об этом в двух абзацах.</textarea>
             
             <hr style="border: 0; border-top: 1px solid #d3c0a3; margin: 25px 0;">
-            <h2 class="panel-header">Строгие Рамки (Контроль)</h2>
+            <h2 class="panel-header">Строгие Рамки (Только для Правого окна)</h2>
             
-            <label>Желаемый формат (Справа):</label>
+            <label>Желаемый формат:</label>
             <select id="responseFormat" onchange="updateFormatInstruction()">
                 <option value="JSON">JSON</option>
                 <option value="HTML">HTML</option>
@@ -251,13 +250,13 @@ HTML_TEMPLATE = """
             </select>
 
             <label>Инструкция по формату:</label>
-            <textarea id="formatInstruction">ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В ФОРМАТЕ JSON. Ключи: "invention", "description", "year".</textarea>
+            <textarea id="formatInstruction">ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В ФОРМАТЕ JSON. Ключи: "invention", "description", "year". Без Markdown форматирования.</textarea>
             
             <div class="controls">
                 <label>Мера Многословия (Max Tokens):</label>
                 <div class="slider-container">
-                    <input type="range" id="maxTokens" min="50" max="2000" value="800" oninput="document.getElementById('valTokens').innerText = this.value">
-                    <span class="val-display" id="valTokens">800</span>
+                    <input type="range" id="maxTokens" min="10" max="800" value="100" oninput="document.getElementById('valTokens').innerText = this.value">
+                    <span class="val-display" id="valTokens">100</span>
                 </div>
                 
                 <label>Степень Воображения (Temperature):</label>
@@ -268,7 +267,7 @@ HTML_TEMPLATE = """
             </div>
 
             <label>Граница Мысли (Stop Sequence - через запятую):</label>
-            <input type="text" id="stopSequence" value="АМИНЬ,STOP,},]">
+            <input type="text" id="stopSequence" value="},],</p>,АМИНЬ">
 
             <button onclick="runTest()">Начать Творение</button>
         </div>
@@ -288,7 +287,6 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- Окно Ошибок -->
     <div id="errorBox" class="error-console">
         <h3>[!] Внимание: Замечены Аномалии (Ошибки)</h3>
         <div id="errorText"></div>
@@ -301,7 +299,7 @@ HTML_TEMPLATE = """
             if (format === 'JSON') {
                 inst.value = 'ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В ФОРМАТЕ JSON. Ключи: "invention", "description", "year". Без Markdown форматирования (без ```json).';
             } else if (format === 'HTML') {
-                inst.value = 'ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В HTML. Используй теги <div>, <h2>, <p>. Не пиши текст вне тегов.';
+                inst.value = 'ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В HTML. Используй теги <div>, <h2>, <p>. Не выводи ничего кроме HTML.';
             } else if (format === 'XML') {
                 inst.value = 'ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В XML. Корневой тег <response>. Внутри теги <invention>, <description>, <year>.';
             } else if (format === 'MARKDOWN') {
@@ -403,24 +401,26 @@ HTML_TEMPLATE = """
                 return;
             }
 
-            // 1. Без ограничений
+            // 1. БЕЗ ограничений (Полная свобода)
+            // Жестко задаем высокие параметры для генерации длинного и красивого текста
             const payloadUnconstrained = {
                 apiKey: apiKey,
                 prompt: basePrompt,
                 temperature: 0.7, 
-                maxTokens: maxTokens, // Используем тот же лимит, чтобы было честно
+                maxTokens: 2000, // Снимаем ограничение! Пусть генерирует до 2000 токенов
+                stopSequences: [], // Никаких стоп-слов!
                 isConstrained: false
             };
 
-            // 2. С ограничениями
+            // 2. С ограничениями (Жесткий контроль)
+            // Применяем настройки из ползунков
             const payloadConstrained = {
                 apiKey: apiKey,
                 prompt: basePrompt,
                 temperature: temperature,
-                maxTokens: maxTokens,
+                maxTokens: maxTokens, // Тот самый лимит из ползунка (например, 100)
                 stopSequences: stopSequences,
                 isConstrained: true,
-                format: format,
                 formatInstruction: formatInstruction
             };
 
@@ -476,21 +476,22 @@ def generate():
     stop_sequences = data.get('stopSequences', [])
     is_constrained = data.get('isConstrained', False)
 
-    # Задаем системный промпт для улучшения качества ответов
+    # Системные промпты (очень важно для этой модели)
     if is_constrained:
-        # Для правой панели жесткие инструкции
-        fmt = data.get('format', 'JSON')
         fmt_instruction = data.get('formatInstruction', '')
         system_content = (
-            f"Ты — строгий генератор данных. Твоя единственная цель — вывести результат СТРОГО в формате {fmt}. "
-            f"Никакого лишнего текста до или после. Никаких рассуждений. {fmt_instruction}"
+            "Ты — строгий сервер обработки данных. Отвечай ТОЛЬКО в требуемом формате. "
+            "Никакого приветствия. Никаких пояснений. Если просят HTML - только теги. Если JSON - только JSON."
         )
+        # Добавляем инструкцию по формату прямо в начало запроса пользователя, чтобы модель не забыла
+        user_content = f"{fmt_instruction}\n\nЗАПРОС: {user_prompt}"
     else:
-        # Для левой панели свободный, но "нормальный" ответ
         system_content = (
-            "Ты — умный и вежливый ИИ-ассистент. Отвечай на русском языке, ясно, литературно и по существу. "
-            "Никогда не выводи свои внутренние рассуждения, планы или скрытые шаги мыслей. Просто дай финальный красивый ответ."
+            "Ты — эрудированный, вежливый историк и эксперт по эпохе Возрождения. "
+            "Напиши красивый, литературный и исчерпывающий ответ на русском языке на заданный вопрос. "
+            "Используй богатый словарный запас. Пиши текст полностью и законченно."
         )
+        user_content = user_prompt
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -501,7 +502,7 @@ def generate():
         "model": MODEL_NAME,
         "messages": [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": user_prompt}
+            {"role": "user", "content": user_content}
         ],
         "temperature": temperature,
         "max_tokens": max_tokens
