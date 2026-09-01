@@ -4,32 +4,15 @@ import requests
 
 app = Flask(__name__)
 
-# Чтение ключа из файла (согласно opencode.jsonc настройкам ai-private)
-# Обрати внимание: в opencode.jsonc указан путь ~/.secrets/ai-private. 
-# В Windows это обычно C:\Users\<User>\.secrets\ai-private
-# Если его там нет, мы сделаем fallback на локальный .env файл или хардкод (небезопасно, но для тестов сойдет).
-
 def get_api_key():
     try:
         secret_path = os.path.expanduser("~/.secrets/ai-private")
         with open(secret_path, 'r') as f:
             return f.read().strip()
     except Exception:
-        print("Warning: Could not read ~/.secrets/ai-private")
-        # Для теста: если ключа нет в файле, можно задать его как переменную окружения
         return os.environ.get("GEMINI_API_KEY", "")
 
-# Настройки API из твоего конфига. 
-# Запрос ты хотел к модели gemini-3.1-pro-preview.
-# ВАЖНО: opencode.jsonc указывает на ai-private (a101.ru) с моделями Qwen.
-# Так как ты просил gemini-3.1-pro-preview, я буду использовать стандартный Gemini API Endpoint 
-# (или если у тебя есть кастомный прокси, его можно поменять здесь).
-# Я сделаю стандартный вызов Google AI API. Если у тебя OpenAI-compatible endpoint, скажи, я переделаю.
-
 GEMINI_API_KEY = get_api_key()
-# Стандартный URL для Google Gemini API (v1beta)
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key={GEMINI_API_KEY}"
-
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -37,44 +20,40 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Day 2 - AI Cyberpunk Console</title>
+    <title>День 2 - Эпоха Возрождения (API)</title>
     <style>
         :root {
-            --neon-green: #39ff14;
-            --neon-pink: #ff00ff;
-            --neon-blue: #00ffff;
-            --dark-bg: #0d0d12;
-            --panel-bg: rgba(20, 20, 25, 0.9);
-            --border-glitch: #ff003c;
+            --parchment: #fdf5e6;
+            --ink: #3e2723;
+            --gold: #b8860b;
+            --dark-red: #5d0000;
+            --panel-bg: #fffbf0;
         }
 
         body {
-            background-color: var(--dark-bg);
-            color: var(--neon-green);
-            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--parchment);
+            /* Текстура старой бумаги */
+            background-image: url('data:image/svg+xml;utf8,<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"><filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="3" stitchTiles="stitch"/></filter><rect width="200" height="200" filter="url(#noise)" opacity="0.04"/></svg>');
+            color: var(--ink);
+            font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, serif;
             margin: 0;
             padding: 20px;
-            background-image: 
-                linear-gradient(rgba(0, 255, 255, 0.05) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(0, 255, 255, 0.05) 1px, transparent 1px);
-            background-size: 20px 20px;
-            overflow-x: hidden;
         }
 
         h1 {
             text-align: center;
-            color: var(--neon-pink);
+            color: var(--dark-red);
             text-transform: uppercase;
-            letter-spacing: 5px;
-            text-shadow: 0 0 10px var(--neon-pink), 0 0 20px var(--neon-pink);
-            border-bottom: 2px solid var(--neon-blue);
-            padding-bottom: 10px;
+            letter-spacing: 3px;
+            border-bottom: 2px solid var(--gold);
+            padding-bottom: 15px;
             margin-bottom: 30px;
+            font-weight: normal;
         }
 
         .container {
             display: flex;
-            gap: 20px;
+            gap: 25px;
             max-width: 1400px;
             margin: 0 auto;
             flex-wrap: wrap;
@@ -82,48 +61,48 @@ HTML_TEMPLATE = """
 
         .panel {
             background: var(--panel-bg);
-            border: 1px solid var(--neon-blue);
-            box-shadow: 0 0 15px rgba(0, 255, 255, 0.2);
-            padding: 20px;
-            border-radius: 5px;
+            border: 2px solid #d3c0a3;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.05), 4px 4px 10px rgba(0,0,0,0.1);
+            padding: 25px;
+            border-radius: 4px;
             flex: 1;
-            min-width: 300px;
+            min-width: 320px;
             position: relative;
         }
         
         .panel::before {
             content: '';
             position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 2px;
-            background: var(--neon-blue);
-            box-shadow: 0 0 10px var(--neon-blue);
+            top: 5px; left: 5px; right: 5px; bottom: 5px;
+            border: 1px solid rgba(184, 134, 11, 0.3);
+            pointer-events: none;
         }
 
         .panel-header {
-            color: var(--neon-blue);
+            color: var(--dark-red);
             margin-top: 0;
-            font-size: 1.2em;
-            text-shadow: 0 0 5px var(--neon-blue);
-            border-bottom: 1px dashed var(--neon-green);
+            font-size: 1.4em;
+            text-align: center;
+            border-bottom: 1px solid #d3c0a3;
             padding-bottom: 10px;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
+            font-style: italic;
         }
 
         label {
             display: block;
             margin-top: 15px;
-            color: var(--neon-pink);
+            color: var(--ink);
             font-weight: bold;
         }
 
-        input[type="text"], input[type="number"], textarea, select {
+        input[type="text"], input[type="password"], textarea {
             width: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            border: 1px solid var(--neon-green);
-            color: var(--neon-blue);
+            background: #fffdf8;
+            border: 1px solid #c7b49a;
+            color: var(--ink);
             padding: 10px;
-            font-family: 'Courier New', Courier, monospace;
+            font-family: 'Palatino Linotype', serif;
             box-sizing: border-box;
             margin-top: 5px;
             outline: none;
@@ -131,143 +110,198 @@ HTML_TEMPLATE = """
         }
 
         input:focus, textarea:focus {
-            box-shadow: 0 0 10px var(--neon-green);
-            border-color: var(--neon-blue);
+            box-shadow: 0 0 8px rgba(184, 134, 11, 0.4);
+            border-color: var(--gold);
         }
 
         textarea {
             resize: vertical;
-            min-height: 100px;
+            min-height: 90px;
         }
 
         .controls {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(211, 192, 163, 0.15);
+            border: 1px dashed #c7b49a;
         }
-        
-        .control-group {
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        input[type="range"] {
             flex: 1;
+            accent-color: var(--dark-red);
+        }
+
+        .val-display {
+            font-weight: bold;
+            color: var(--gold);
+            min-width: 40px;
+            text-align: right;
         }
 
         button {
             width: 100%;
-            background: transparent;
-            color: var(--neon-pink);
-            border: 1px solid var(--neon-pink);
-            padding: 15px;
-            font-family: 'Courier New', Courier, monospace;
+            background: var(--dark-red);
+            color: var(--parchment);
+            border: 2px solid var(--gold);
+            padding: 12px;
+            font-family: 'Palatino Linotype', serif;
             font-size: 1.1em;
-            font-weight: bold;
             cursor: pointer;
             margin-top: 20px;
             text-transform: uppercase;
+            letter-spacing: 2px;
             transition: all 0.3s;
-            position: relative;
-            overflow: hidden;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
         }
 
         button:hover {
-            background: var(--neon-pink);
-            color: var(--dark-bg);
-            box-shadow: 0 0 20px var(--neon-pink);
+            background: var(--gold);
+            color: var(--dark-red);
+            border-color: var(--dark-red);
         }
 
         .result-box {
-            background: #000;
-            border: 1px solid var(--neon-blue);
+            background: #fffdf8;
+            border: 1px solid #c7b49a;
             padding: 15px;
             margin-top: 15px;
-            min-height: 200px;
+            min-height: 250px;
             white-space: pre-wrap;
             overflow-y: auto;
-            max-height: 400px;
-            color: #ddd;
+            max-height: 450px;
+            color: var(--ink);
+            line-height: 1.6;
         }
 
         .status {
             font-size: 0.9em;
             margin-top: 10px;
-            color: var(--neon-pink);
+            color: #795548;
             text-align: right;
             height: 20px;
+            font-style: italic;
         }
 
-        /* Сканирующая линия аля киберпанк */
-        .scanline {
-            width: 100%;
-            height: 100px;
-            z-index: 9999;
-            position: absolute;
-            pointer-events: none;
-            background: linear-gradient(to bottom, transparent, rgba(0, 255, 255, 0.1), transparent);
-            animation: scan 6s linear infinite;
+        .connection-panel {
+            background: rgba(184, 134, 11, 0.1);
+            border: 1px solid var(--gold);
+            padding: 15px;
+            margin-bottom: 25px;
+            text-align: center;
+            border-radius: 4px;
         }
-        @keyframes scan {
-            0% { top: -100px; }
-            100% { top: 100%; }
+
+        #conn-status-text {
+            font-weight: bold;
+            margin-left: 10px;
         }
+        .status-ok { color: green; }
+        .status-err { color: red; }
+        .status-wait { color: #b8860b; }
     </style>
 </head>
 <body>
-    <div class="scanline"></div>
-    <h1>[ DAY 2: Response Format Control ]</h1>
+    <h1>Трактат о Свободном и Формальном Ответе</h1>
     
+    <div class="connection-panel">
+        <span>Статус Связи с Музами (API):</span>
+        <span id="conn-status-text" class="status-wait">Ожидание проверки...</span>
+        <button onclick="checkConnection()" style="width: auto; padding: 5px 15px; margin-left: 15px; margin-top: 0; font-size: 0.9em;">Проверить связь</button>
+    </div>
+
     <div class="container">
         <!-- Левая панель: Ввод -->
         <div class="panel">
-            <h2 class="panel-header">>> INIT_SEQUENCE</h2>
+            <h2 class="panel-header">Перо и Пергамент (Ввод)</h2>
             
-            <label>API Key (Gemini):</label>
-            <input type="password" id="apiKey" placeholder="Вставь ключ, если его нет в .secrets..." value="{{ api_key_preview }}">
+            <label>Тайный Ключ (API Key):</label>
+            <input type="password" id="apiKey" placeholder="Секретный шифр..." value="{{ api_key_preview }}">
             
-            <label>Base Prompt (Запрос):</label>
-            <textarea id="basePrompt">Расскажи мне о киберпанке как о жанре. Напиши 2 абзаца.</textarea>
+            <label>Суть Вопрошания (Запрос):</label>
+            <textarea id="basePrompt">Опиши устройство летательной машины Леонардо да Винчи. Два абзаца.</textarea>
             
-            <hr style="border: 0; border-top: 1px dashed var(--neon-green); margin: 20px 0;">
-            <h2 class="panel-header" style="color: var(--neon-pink);">> CONSTRAINTS_MODULE</h2>
+            <hr style="border: 0; border-top: 1px solid #d3c0a3; margin: 25px 0;">
+            <h2 class="panel-header">Строгие Рамки (Контроль)</h2>
             
-            <label>Format Instruction (Явное описание формата):</label>
-            <textarea id="formatInstruction">ОТВЕТ ДОЛЖЕН БЫТЬ В ФОРМАТЕ JSON. Ключи: "title", "paragraph1", "paragraph2".</textarea>
+            <label>Форма изложения (Явное описание формата):</label>
+            <textarea id="formatInstruction">ОТВЕТ ДОЛЖЕН БЫТЬ В ФОРМАТЕ JSON. Ключи: "invention", "description", "year".</textarea>
             
             <div class="controls">
-                <div class="control-group">
-                    <label>Max Tokens:</label>
-                    <input type="number" id="maxTokens" value="150" min="10" max="2000">
+                <label>Мера Многословия (Max Tokens):</label>
+                <div class="slider-container">
+                    <input type="range" id="maxTokens" min="10" max="2000" value="150" oninput="document.getElementById('valTokens').innerText = this.value">
+                    <span class="val-display" id="valTokens">150</span>
                 </div>
-                <div class="control-group">
-                    <label>Temperature:</label>
-                    <input type="number" id="temperature" value="0.2" min="0" max="2" step="0.1">
+                
+                <label>Степень Воображения (Temperature):</label>
+                <div class="slider-container">
+                    <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.2" oninput="document.getElementById('valTemp').innerText = this.value">
+                    <span class="val-display" id="valTemp">0.2</span>
                 </div>
             </div>
 
-            <label>Stop Sequence (Условие завершения - через запятую):</label>
-            <input type="text" id="stopSequence" value="КОНЕЦ,STOP,},]">
+            <label>Граница Мысли (Stop Sequence - через запятую):</label>
+            <input type="text" id="stopSequence" value="АМИНЬ,STOP,},]">
 
-            <button onclick="runTest()">EXECUTE_COMPARISON()</button>
+            <button onclick="runTest()">Начать Творение</button>
         </div>
 
         <!-- Правая панель 1: Без ограничений -->
         <div class="panel">
-            <h2 class="panel-header">>> OUTPUT: NO_CONSTRAINTS</h2>
-            <div class="status" id="status-unconstrained">Awaiting Execution...</div>
+            <h2 class="panel-header">Полет Фантазии (Без ограничений)</h2>
+            <div class="status" id="status-unconstrained">Ожидает вашего слова...</div>
             <div class="result-box" id="result-unconstrained"></div>
         </div>
 
         <!-- Правая панель 2: С ограничениями -->
         <div class="panel">
-            <h2 class="panel-header" style="color: var(--neon-pink);">>> OUTPUT: CONSTRAINED</h2>
-            <div class="status" id="status-constrained">Awaiting Execution...</div>
-            <div class="result-box" id="result-constrained" style="border-color: var(--neon-pink);"></div>
+            <h2 class="panel-header" style="color: #4a148c;">Чеканная Форма (С ограничениями)</h2>
+            <div class="status" id="status-constrained">Ожидает вашего слова...</div>
+            <div class="result-box" id="result-constrained" style="border-left: 4px solid var(--dark-red);"></div>
         </div>
     </div>
 
     <script>
+        async function checkConnection() {
+            const apiKey = document.getElementById('apiKey').value;
+            const statusEl = document.getElementById('conn-status-text');
+            
+            statusEl.className = 'status-wait';
+            statusEl.innerText = "Гонцы отправлены...";
+            
+            try {
+                const response = await fetch('/check_connection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiKey: apiKey })
+                });
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    statusEl.className = 'status-ok';
+                    statusEl.innerText = "Успешно! " + data.message;
+                } else {
+                    statusEl.className = 'status-err';
+                    statusEl.innerText = "Провал: " + data.message;
+                }
+            } catch (err) {
+                statusEl.className = 'status-err';
+                statusEl.innerText = "Ошибка: " + err.message;
+            }
+        }
+
         async function sendRequest(payload, targetElement, statusElement) {
             const el = document.getElementById(targetElement);
             const statusEl = document.getElementById(statusElement);
-            el.innerHTML = '<span style="color: yellow;">[PROCESSING...]</span>';
-            statusEl.innerText = "System working...";
+            el.innerHTML = '<span style="color: #b8860b;">[Творим...]</span>';
+            statusEl.innerText = "Музы трудятся...";
             
             try {
                 const response = await fetch('/generate', {
@@ -278,15 +312,15 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 
                 if (data.error) {
-                    el.innerHTML = `<span style="color: red;">[ERROR] ${data.error}</span>`;
-                    statusEl.innerText = "Execution Failed";
+                    el.innerHTML = `<span style="color: red;">[ОШИБКА] ${data.error}</span>`;
+                    statusEl.innerText = "Произошел конфуз";
                 } else {
                     el.innerText = data.text;
-                    statusEl.innerText = `Tokens generated: ${data.tokens || 'N/A'}`;
+                    statusEl.innerText = `Написано слов (токенов): ${data.tokens || 'Неизвестно'}`;
                 }
             } catch (err) {
-                el.innerHTML = `<span style="color: red;">[CRITICAL ERROR] ${err.message}</span>`;
-                statusEl.innerText = "Connection Lost";
+                el.innerHTML = `<span style="color: red;">[КРИТИЧЕСКАЯ ОШИБКА] ${err.message}</span>`;
+                statusEl.innerText = "Связь потеряна";
             }
         }
 
@@ -301,20 +335,17 @@ HTML_TEMPLATE = """
             const stopSequences = stopSeqRaw.split(',').map(s => s.trim()).filter(s => s.length > 0);
 
             if (!apiKey) {
-                alert("[SYSTEM ERROR] API Key Required");
+                alert("Необходим Тайный Ключ (API Key)!");
                 return;
             }
 
-            // 1. Запрос БЕЗ ограничений (только базовый промпт, стандартные параметры)
             const payloadUnconstrained = {
                 apiKey: apiKey,
                 prompt: basePrompt,
-                temperature: 0.7, // Стандартная температура
-                maxTokens: 800    // Достаточно большой лимит
+                temperature: 0.7, 
+                maxTokens: 800    
             };
 
-            // 2. Запрос С ограничениями
-            // Объединяем базовый промпт и инструкцию по формату
             const combinedPrompt = `${basePrompt}\n\nИНСТРУКЦИЯ ПО ФОРМАТУ:\n${formatInstruction}`;
             const payloadConstrained = {
                 apiKey: apiKey,
@@ -324,12 +355,18 @@ HTML_TEMPLATE = """
                 stopSequences: stopSequences
             };
 
-            // Запускаем оба параллельно
             Promise.all([
                 sendRequest(payloadUnconstrained, 'result-unconstrained', 'status-unconstrained'),
                 sendRequest(payloadConstrained, 'result-constrained', 'status-constrained')
             ]);
         }
+        
+        // Проверяем связь при загрузке
+        window.onload = () => {
+            if(document.getElementById('apiKey').value) {
+                checkConnection();
+            }
+        };
     </script>
 </body>
 </html>
@@ -337,9 +374,30 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    # Показываем заглушку, если ключ найден, чтобы не светить его в UI
     key_preview = "***" if GEMINI_API_KEY else "" 
     return render_template_string(HTML_TEMPLATE, api_key_preview=key_preview)
+
+@app.route('/check_connection', methods=['POST'])
+def check_connection():
+    data = request.json
+    api_key = data.get('apiKey', GEMINI_API_KEY)
+    
+    if not api_key or api_key == "***":
+        api_key = GEMINI_API_KEY
+        
+    if not api_key:
+        return jsonify({"status": "error", "message": "Ключ не предоставлен."})
+
+    # Легкий запрос для проверки ключа: получение информации о модели
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview?key={api_key}"
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return jsonify({"status": "ok", "message": "Доступ к ИИ открыт!"})
+        else:
+            return jsonify({"status": "error", "message": f"Отказ API (Код {response.status_code})"}), response.status_code
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/generate', methods=['POST'])
 def generate():
@@ -347,7 +405,6 @@ def generate():
     api_key = data.get('apiKey', GEMINI_API_KEY)
     
     if not api_key or api_key == "***":
-        # Если пришел "***", используем системный ключ
         api_key = GEMINI_API_KEY
     
     if not api_key:
@@ -360,7 +417,6 @@ def generate():
     max_tokens = data.get('maxTokens', 800)
     stop_sequences = data.get('stopSequences', [])
 
-    # Формируем тело запроса для Gemini API
     payload = {
         "contents": [{
             "parts": [{"text": prompt}]
@@ -379,16 +435,14 @@ def generate():
         response.raise_for_status()
         resp_data = response.json()
         
-        # Извлекаем текст ответа
         try:
             text = resp_data['candidates'][0]['content']['parts'][0]['text']
-            # Примерный подсчет токенов (в реальности Gemini возвращает usageMetadata)
             usage = resp_data.get('usageMetadata', {})
             tokens_generated = usage.get('candidatesTokenCount', len(text.split()))
             
             return jsonify({"text": text, "tokens": tokens_generated})
         except KeyError:
-            return jsonify({"error": "Unexpected API response format", "details": resp_data}), 500
+            return jsonify({"error": "Неожиданный формат ответа API", "details": resp_data}), 500
             
     except requests.exceptions.RequestException as e:
         error_msg = str(e)
@@ -400,5 +454,5 @@ def generate():
         return jsonify({"error": error_msg}), int(response.status_code) if response.status_code else 500
 
 if __name__ == '__main__':
-    print(">>> SYSTEM INITIATED. NEON SERVER RUNNING ON PORT 5000 <<<")
+    print(">>> СЕРВЕР ВОЗРОЖДЕНИЯ ЗАПУЩЕН НА ПОРТУ 5000 <<<")
     app.run(host='0.0.0.0', port=5000, debug=True)
