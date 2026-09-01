@@ -4,15 +4,10 @@ import requests
 
 app = Flask(__name__)
 
-def get_api_key():
-    try:
-        secret_path = os.path.expanduser("~/.secrets/ai-private")
-        with open(secret_path, 'r') as f:
-            return f.read().strip()
-    except Exception:
-        return os.environ.get("GEMINI_API_KEY", "")
-
-GEMINI_API_KEY = get_api_key()
+# URL компании a101, который выступает прокси к OpenRouter -> Google
+BASE_URL = "https://ai-public.a101.ru/api"
+# Точное имя модели из твоего конфига ai-public
+MODEL_NAME = "google/gemini-3.1-pro-preview"
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -32,7 +27,6 @@ HTML_TEMPLATE = """
 
         body {
             background-color: var(--parchment);
-            /* Текстура старой бумаги */
             background-image: url('data:image/svg+xml;utf8,<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg"><filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="3" stitchTiles="stitch"/></filter><rect width="200" height="200" filter="url(#noise)" opacity="0.04"/></svg>');
             color: var(--ink);
             font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, serif;
@@ -211,8 +205,8 @@ HTML_TEMPLATE = """
     <h1>Трактат о Свободном и Формальном Ответе</h1>
     
     <div class="connection-panel">
-        <span>Статус Связи с Музами (API):</span>
-        <span id="conn-status-text" class="status-wait">Ожидание проверки...</span>
+        <span>Статус Связи с Корпоративной Сетью (a101.ru):</span>
+        <span id="conn-status-text" class="status-wait">Ожидание ввода ключа...</span>
         <button onclick="checkConnection()" style="width: auto; padding: 5px 15px; margin-left: 15px; margin-top: 0; font-size: 0.9em;">Проверить связь</button>
     </div>
 
@@ -221,8 +215,8 @@ HTML_TEMPLATE = """
         <div class="panel">
             <h2 class="panel-header">Перо и Пергамент (Ввод)</h2>
             
-            <label>Тайный Ключ (API Key):</label>
-            <input type="password" id="apiKey" placeholder="Секретный шифр..." value="{{ api_key_preview }}">
+            <label>Корпоративный Ключ (a101 API Key):</label>
+            <input type="password" id="apiKey" placeholder="Вставьте ваш личный ключ a101...">
             
             <label>Суть Вопрошания (Запрос):</label>
             <textarea id="basePrompt">Опиши устройство летательной машины Леонардо да Винчи. Два абзаца.</textarea>
@@ -273,8 +267,13 @@ HTML_TEMPLATE = """
             const apiKey = document.getElementById('apiKey').value;
             const statusEl = document.getElementById('conn-status-text');
             
+            if (!apiKey) {
+                alert("Пожалуйста, введите ваш корпоративный ключ API.");
+                return;
+            }
+            
             statusEl.className = 'status-wait';
-            statusEl.innerText = "Гонцы отправлены...";
+            statusEl.innerText = "Гонцы отправлены в корпоративную сеть...";
             
             try {
                 const response = await fetch('/check_connection', {
@@ -335,7 +334,7 @@ HTML_TEMPLATE = """
             const stopSequences = stopSeqRaw.split(',').map(s => s.trim()).filter(s => s.length > 0);
 
             if (!apiKey) {
-                alert("Необходим Тайный Ключ (API Key)!");
+                alert("Необходим Корпоративный Ключ (API Key)!");
                 return;
             }
 
@@ -360,13 +359,6 @@ HTML_TEMPLATE = """
                 sendRequest(payloadConstrained, 'result-constrained', 'status-constrained')
             ]);
         }
-        
-        // Проверяем связь при загрузке
-        window.onload = () => {
-            if(document.getElementById('apiKey').value) {
-                checkConnection();
-            }
-        };
     </script>
 </body>
 </html>
@@ -374,26 +366,27 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    key_preview = "***" if GEMINI_API_KEY else "" 
-    return render_template_string(HTML_TEMPLATE, api_key_preview=key_preview)
+    # Мы больше не берем ключ из файла. Юзер вводит его сам на сайте.
+    return render_template_string(HTML_TEMPLATE)
 
 @app.route('/check_connection', methods=['POST'])
 def check_connection():
     data = request.json
-    api_key = data.get('apiKey', GEMINI_API_KEY)
+    api_key = data.get('apiKey')
     
-    if not api_key or api_key == "***":
-        api_key = GEMINI_API_KEY
-        
     if not api_key:
         return jsonify({"status": "error", "message": "Ключ не предоставлен."})
 
-    # Легкий запрос для проверки ключа: получение информации о модели
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview?key={api_key}"
+    # Используем OpenAI-compatible Endpoint из конфига (ai-public)
+    url = f"{BASE_URL}/models"
+    headers = {
+        "Authorization": f"Bearer {api_key}"
+    }
+    
     try:
-        response = requests.get(url)
+        response = requests.get(url, headers=headers)
         if response.status_code == 200:
-            return jsonify({"status": "ok", "message": "Доступ к ИИ открыт!"})
+            return jsonify({"status": "ok", "message": "Доступ к a101.ru открыт!"})
         else:
             return jsonify({"status": "error", "message": f"Отказ API (Код {response.status_code})"}), response.status_code
     except Exception as e:
@@ -402,46 +395,50 @@ def check_connection():
 @app.route('/generate', methods=['POST'])
 def generate():
     data = request.json
-    api_key = data.get('apiKey', GEMINI_API_KEY)
-    
-    if not api_key or api_key == "***":
-        api_key = GEMINI_API_KEY
+    api_key = data.get('apiKey')
     
     if not api_key:
         return jsonify({"error": "API Key is missing."}), 400
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key={api_key}"
+    # Запрос в OpenAI-совместимом формате на корпоративный URL a101
+    url = f"{BASE_URL}/chat/completions"
     
     prompt = data.get('prompt', '')
     temperature = data.get('temperature', 0.7)
     max_tokens = data.get('maxTokens', 800)
     stop_sequences = data.get('stopSequences', [])
 
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    # Формат запроса по стандарту OpenAI (который поддерживает ваша прокси-обертка npm: @ai-sdk/openai-compatible)
     payload = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }],
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_tokens,
-        }
+        "model": MODEL_NAME, # "google/gemini-3.1-pro-preview"
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens
     }
     
     if stop_sequences:
-        payload["generationConfig"]["stopSequences"] = stop_sequences
+        payload["stop"] = stop_sequences
 
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
         resp_data = response.json()
         
         try:
-            text = resp_data['candidates'][0]['content']['parts'][0]['text']
-            usage = resp_data.get('usageMetadata', {})
-            tokens_generated = usage.get('candidatesTokenCount', len(text.split()))
+            # Извлечение ответа из формата OpenAI
+            text = resp_data['choices'][0]['message']['content']
+            usage = resp_data.get('usage', {})
+            tokens_generated = usage.get('completion_tokens', 'Неизвестно')
             
             return jsonify({"text": text, "tokens": tokens_generated})
-        except KeyError:
+        except (KeyError, IndexError):
             return jsonify({"error": "Неожиданный формат ответа API", "details": resp_data}), 500
             
     except requests.exceptions.RequestException as e:
@@ -454,5 +451,7 @@ def generate():
         return jsonify({"error": error_msg}), int(response.status_code) if response.status_code else 500
 
 if __name__ == '__main__':
-    print(">>> СЕРВЕР ВОЗРОЖДЕНИЯ ЗАПУЩЕН НА ПОРТУ 5000 <<<")
+    print(f">>> СЕРВЕР ВОЗРОЖДЕНИЯ ЗАПУЩЕН НА ПОРТУ 5000 <<<")
+    print(f"Базовый URL: {BASE_URL}")
+    print(f"Модель по умолчанию: {MODEL_NAME}")
     app.run(host='0.0.0.0', port=5000, debug=True)
