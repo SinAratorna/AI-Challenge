@@ -4,9 +4,8 @@ import requests
 
 app = Flask(__name__)
 
-# URL компании a101, который выступает прокси к OpenRouter -> Google
+# URL компании a101, который выступает прокси
 BASE_URL = "https://ai-public.a101.ru/api"
-# Точное имя модели из твоего конфига ai-public
 MODEL_NAME = "google/gemini-3.1-pro-preview"
 
 HTML_TEMPLATE = """
@@ -90,7 +89,7 @@ HTML_TEMPLATE = """
             font-weight: bold;
         }
 
-        input[type="text"], input[type="password"], textarea {
+        input[type="text"], input[type="password"], textarea, select {
             width: 100%;
             background: #fffdf8;
             border: 1px solid #c7b49a;
@@ -101,9 +100,10 @@ HTML_TEMPLATE = """
             margin-top: 5px;
             outline: none;
             transition: all 0.3s;
+            font-size: 1em;
         }
 
-        input:focus, textarea:focus {
+        input:focus, textarea:focus, select:focus {
             box-shadow: 0 0 8px rgba(184, 134, 11, 0.4);
             border-color: var(--gold);
         }
@@ -199,6 +199,24 @@ HTML_TEMPLATE = """
         .status-ok { color: green; }
         .status-err { color: red; }
         .status-wait { color: #b8860b; }
+
+        .error-console {
+            background: var(--dark-red);
+            color: #ffcccc;
+            padding: 20px;
+            margin-top: 25px;
+            border: 2px solid var(--gold);
+            border-radius: 4px;
+            display: none;
+            font-family: 'Courier New', Courier, monospace;
+            box-shadow: 0 0 15px rgba(93, 0, 0, 0.5);
+        }
+        .error-console h3 {
+            margin-top: 0;
+            color: var(--gold);
+            border-bottom: 1px solid var(--gold);
+            padding-bottom: 5px;
+        }
     </style>
 </head>
 <body>
@@ -219,19 +237,27 @@ HTML_TEMPLATE = """
             <input type="password" id="apiKey" placeholder="Вставьте ваш личный ключ a101...">
             
             <label>Суть Вопрошания (Запрос):</label>
-            <textarea id="basePrompt">Опиши устройство летательной машины Леонардо да Винчи. Два абзаца.</textarea>
+            <textarea id="basePrompt">Опиши устройство летательной машины Леонардо да Винчи. Расскажи об этом в двух абзацах на русском языке.</textarea>
             
             <hr style="border: 0; border-top: 1px solid #d3c0a3; margin: 25px 0;">
             <h2 class="panel-header">Строгие Рамки (Контроль)</h2>
             
-            <label>Форма изложения (Явное описание формата):</label>
-            <textarea id="formatInstruction">ОТВЕТ ДОЛЖЕН БЫТЬ В ФОРМАТЕ JSON. Ключи: "invention", "description", "year".</textarea>
+            <label>Желаемый формат (Справа):</label>
+            <select id="responseFormat" onchange="updateFormatInstruction()">
+                <option value="JSON">JSON</option>
+                <option value="HTML">HTML</option>
+                <option value="XML">XML</option>
+                <option value="MARKDOWN">Markdown</option>
+            </select>
+
+            <label>Инструкция по формату:</label>
+            <textarea id="formatInstruction">ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В ФОРМАТЕ JSON. Ключи: "invention", "description", "year".</textarea>
             
             <div class="controls">
                 <label>Мера Многословия (Max Tokens):</label>
                 <div class="slider-container">
-                    <input type="range" id="maxTokens" min="10" max="2000" value="150" oninput="document.getElementById('valTokens').innerText = this.value">
-                    <span class="val-display" id="valTokens">150</span>
+                    <input type="range" id="maxTokens" min="50" max="2000" value="800" oninput="document.getElementById('valTokens').innerText = this.value">
+                    <span class="val-display" id="valTokens">800</span>
                 </div>
                 
                 <label>Степень Воображения (Temperature):</label>
@@ -262,7 +288,39 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
+    <!-- Окно Ошибок -->
+    <div id="errorBox" class="error-console">
+        <h3>[!] Внимание: Замечены Аномалии (Ошибки)</h3>
+        <div id="errorText"></div>
+    </div>
+
     <script>
+        function updateFormatInstruction() {
+            const format = document.getElementById('responseFormat').value;
+            const inst = document.getElementById('formatInstruction');
+            if (format === 'JSON') {
+                inst.value = 'ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В ФОРМАТЕ JSON. Ключи: "invention", "description", "year". Без Markdown форматирования (без ```json).';
+            } else if (format === 'HTML') {
+                inst.value = 'ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В HTML. Используй теги <div>, <h2>, <p>. Не пиши текст вне тегов.';
+            } else if (format === 'XML') {
+                inst.value = 'ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В XML. Корневой тег <response>. Внутри теги <invention>, <description>, <year>.';
+            } else if (format === 'MARKDOWN') {
+                inst.value = 'ОТВЕТ ДОЛЖЕН БЫТЬ В MARKDOWN. Используй заголовки (##), жирный шрифт (**) и списки (-).';
+            }
+        }
+
+        function showError(message) {
+            const errorBox = document.getElementById('errorBox');
+            const errorText = document.getElementById('errorText');
+            errorBox.style.display = 'block';
+            errorText.innerHTML += `<div>- ${new Date().toLocaleTimeString()}: ${message}</div>`;
+        }
+
+        function clearErrors() {
+            document.getElementById('errorBox').style.display = 'none';
+            document.getElementById('errorText').innerHTML = '';
+        }
+
         async function checkConnection() {
             const apiKey = document.getElementById('apiKey').value;
             const statusEl = document.getElementById('conn-status-text');
@@ -274,6 +332,7 @@ HTML_TEMPLATE = """
             
             statusEl.className = 'status-wait';
             statusEl.innerText = "Гонцы отправлены в корпоративную сеть...";
+            clearErrors();
             
             try {
                 const response = await fetch('/check_connection', {
@@ -289,10 +348,12 @@ HTML_TEMPLATE = """
                 } else {
                     statusEl.className = 'status-err';
                     statusEl.innerText = "Провал: " + data.message;
+                    showError("Check Connection API Error: " + data.message);
                 }
             } catch (err) {
                 statusEl.className = 'status-err';
-                statusEl.innerText = "Ошибка: " + err.message;
+                statusEl.innerText = "Ошибка сети";
+                showError("Network Error on Check Connection: " + err.message);
             }
         }
 
@@ -311,21 +372,25 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 
                 if (data.error) {
-                    el.innerHTML = `<span style="color: red;">[ОШИБКА] ${data.error}</span>`;
-                    statusEl.innerText = "Произошел конфуз";
+                    el.innerHTML = `<span style="color: red;">[СМОТРИТЕ ОКНО ОШИБОК ВНИЗУ]</span>`;
+                    statusEl.innerText = "Произошла ошибка";
+                    showError(`Error in ${payload.isConstrained ? 'Constrained' : 'Unconstrained'} Request: ${data.error}`);
                 } else {
                     el.innerText = data.text;
                     statusEl.innerText = `Написано слов (токенов): ${data.tokens || 'Неизвестно'}`;
                 }
             } catch (err) {
-                el.innerHTML = `<span style="color: red;">[КРИТИЧЕСКАЯ ОШИБКА] ${err.message}</span>`;
+                el.innerHTML = `<span style="color: red;">[ОШИБКА СЕТИ]</span>`;
                 statusEl.innerText = "Связь потеряна";
+                showError(`Fatal Request Error (${payload.isConstrained ? 'Constrained' : 'Unconstrained'}): ${err.message}`);
             }
         }
 
         async function runTest() {
+            clearErrors();
             const apiKey = document.getElementById('apiKey').value;
             const basePrompt = document.getElementById('basePrompt').value;
+            const format = document.getElementById('responseFormat').value;
             const formatInstruction = document.getElementById('formatInstruction').value;
             const maxTokens = parseInt(document.getElementById('maxTokens').value);
             const temperature = parseFloat(document.getElementById('temperature').value);
@@ -338,20 +403,25 @@ HTML_TEMPLATE = """
                 return;
             }
 
+            // 1. Без ограничений
             const payloadUnconstrained = {
                 apiKey: apiKey,
                 prompt: basePrompt,
                 temperature: 0.7, 
-                maxTokens: 800    
+                maxTokens: maxTokens, // Используем тот же лимит, чтобы было честно
+                isConstrained: false
             };
 
-            const combinedPrompt = `${basePrompt}\n\nИНСТРУКЦИЯ ПО ФОРМАТУ:\n${formatInstruction}`;
+            // 2. С ограничениями
             const payloadConstrained = {
                 apiKey: apiKey,
-                prompt: combinedPrompt,
+                prompt: basePrompt,
                 temperature: temperature,
                 maxTokens: maxTokens,
-                stopSequences: stopSequences
+                stopSequences: stopSequences,
+                isConstrained: true,
+                format: format,
+                formatInstruction: formatInstruction
             };
 
             Promise.all([
@@ -366,7 +436,6 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    # Мы больше не берем ключ из файла. Юзер вводит его сам на сайте.
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/check_connection', methods=['POST'])
@@ -377,7 +446,6 @@ def check_connection():
     if not api_key:
         return jsonify({"status": "error", "message": "Ключ не предоставлен."})
 
-    # Используем OpenAI-compatible Endpoint из конфига (ai-public)
     url = f"{BASE_URL}/models"
     headers = {
         "Authorization": f"Bearer {api_key}"
@@ -388,7 +456,7 @@ def check_connection():
         if response.status_code == 200:
             return jsonify({"status": "ok", "message": "Доступ к a101.ru открыт!"})
         else:
-            return jsonify({"status": "error", "message": f"Отказ API (Код {response.status_code})"}), response.status_code
+            return jsonify({"status": "error", "message": f"Отказ API (Код {response.status_code}): {response.text}"}), response.status_code
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -400,30 +468,46 @@ def generate():
     if not api_key:
         return jsonify({"error": "API Key is missing."}), 400
 
-    # Запрос в OpenAI-совместимом формате на корпоративный URL a101
     url = f"{BASE_URL}/chat/completions"
     
-    prompt = data.get('prompt', '')
+    user_prompt = data.get('prompt', '')
     temperature = data.get('temperature', 0.7)
     max_tokens = data.get('maxTokens', 800)
     stop_sequences = data.get('stopSequences', [])
+    is_constrained = data.get('isConstrained', False)
+
+    # Задаем системный промпт для улучшения качества ответов
+    if is_constrained:
+        # Для правой панели жесткие инструкции
+        fmt = data.get('format', 'JSON')
+        fmt_instruction = data.get('formatInstruction', '')
+        system_content = (
+            f"Ты — строгий генератор данных. Твоя единственная цель — вывести результат СТРОГО в формате {fmt}. "
+            f"Никакого лишнего текста до или после. Никаких рассуждений. {fmt_instruction}"
+        )
+    else:
+        # Для левой панели свободный, но "нормальный" ответ
+        system_content = (
+            "Ты — умный и вежливый ИИ-ассистент. Отвечай на русском языке, ясно, литературно и по существу. "
+            "Никогда не выводи свои внутренние рассуждения, планы или скрытые шаги мыслей. Просто дай финальный красивый ответ."
+        )
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
 
-    # Формат запроса по стандарту OpenAI (который поддерживает ваша прокси-обертка npm: @ai-sdk/openai-compatible)
     payload = {
-        "model": MODEL_NAME, # "google/gemini-3.1-pro-preview"
+        "model": MODEL_NAME,
         "messages": [
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_prompt}
         ],
         "temperature": temperature,
         "max_tokens": max_tokens
     }
     
-    if stop_sequences:
+    if is_constrained and stop_sequences:
         payload["stop"] = stop_sequences
 
     try:
@@ -432,22 +516,21 @@ def generate():
         resp_data = response.json()
         
         try:
-            # Извлечение ответа из формата OpenAI
             text = resp_data['choices'][0]['message']['content']
             usage = resp_data.get('usage', {})
             tokens_generated = usage.get('completion_tokens', 'Неизвестно')
             
             return jsonify({"text": text, "tokens": tokens_generated})
         except (KeyError, IndexError):
-            return jsonify({"error": "Неожиданный формат ответа API", "details": resp_data}), 500
+            return jsonify({"error": "Неожиданный формат ответа от a101.ru", "details": str(resp_data)}), 500
             
     except requests.exceptions.RequestException as e:
         error_msg = str(e)
         if response.content:
             try:
-                error_msg += " " + str(response.json())
+                error_msg += " | Ответил сервер: " + str(response.json())
             except:
-                pass
+                error_msg += " | Ответил сервер: " + response.text
         return jsonify({"error": error_msg}), int(response.status_code) if response.status_code else 500
 
 if __name__ == '__main__':
