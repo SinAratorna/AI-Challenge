@@ -16,14 +16,14 @@ MODELS = {
         "price_per_1k": 0.0001 # Условная цена за 1к токенов в $
     },
     "medium": {
-        "id": "openrouter/claude-sonnet-5",
-        "name": "Claude Sonnet 5",
+        "id": "anthropic/claude-3-5-sonnet",
+        "name": "Claude 3.5 Sonnet",
         "tier": "Средняя / Баланс",
         "price_per_1k": 0.003
     },
     "strong": {
-        "id": "openai/gpt-5.6-luna", # Берем сильную модель из конфига
-        "name": "GPT-5.6 Luna",
+        "id": "openai/gpt-4o", # Проверенная сильная модель, которая точно есть в большинстве совместимых API
+        "name": "GPT-4o (Сильная)",
         "tier": "Сильная / Дорогая",
         "price_per_1k": 0.015
     }
