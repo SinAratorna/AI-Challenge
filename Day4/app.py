@@ -325,7 +325,7 @@ def generate():
             {"role": "user", "content": prompt}
         ],
         "temperature": temperature,
-        "max_tokens": 500
+        "max_tokens": 1000
     }
 
     try:
